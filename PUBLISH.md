@@ -5,7 +5,7 @@
 | 项目 | 内容 |
 |------|------|
 | **Skill 名称** | evernote-note |
-| **版本** | 1.0.0 |
+| **版本** | 1.1.0 |
 | **描述** | 印象笔记 API skill，用于管理用户的印象笔记 |
 | **主页** | https://www.yinxiang.com |
 | **开发者** | WorkBuddy Team |

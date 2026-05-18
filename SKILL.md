@@ -289,6 +289,67 @@ result = note_store.findNotesMetadata(developer_token, filter, 0, 20,
 | `EDAMDataConflictException` | 数据冲突 | 使用最新数据重试 |
 | `EDAMPermissionDenied` | 权限不足 | 检查令牌权限 |
 
+### EDAM errorCode 速查
+
+| code | 含义 | 排查 |
+|------|------|------|
+| 2 | BAD_DATA_FORMAT | 参数格式错误 |
+| 3 | PERMISSION_DENIED | 令牌权限不足 |
+| 8 | INVALID_AUTH | 令牌无效 / **host 选错**（如 s12 token 用了 www.evernote.com） |
+| 9 | AUTH_EXPIRED | **开发者令牌已过期**,需重新生成 |
+| 11 | ENML_VALIDATION | ENML 内容不合规 |
+| 12 | SHARD_UNAVAILABLE | shard 暂时不可达 |
+
+### 令牌过期速查
+
+开发者令牌到期日嵌在 token 的 `E=` 字段中(16 进制毫秒时间戳)。怀疑过期时先解码再判断,不要瞎试:
+
+```python
+# token: S=s12:U=321a48:E=19e5fd1a8b1:C=...:A=en-devtoken:V=2:H=...
+import datetime
+exp_hex = "19e5fd1a8b1"  # E= 字段
+print(datetime.datetime.fromtimestamp(int(exp_hex, 16) / 1000))
+# → 2027-04-08 ... 即过期日
+```
+
+EDAM errorCode=9 时,99% 是 token 过期,去 https://app.yinxiang.com/api/DeveloperToken.action 重新生成。
+
+### Host 选择
+
+token 中 `S=s12` 这类 shard 标识**不能**直接用来推断使用 yinxiang 还是 evernote,需要试错:
+
+- 在 `app.yinxiang.com` 返回 **errorCode=9** → 说明 host 正确(token 被识别),只是过期
+- 在 `www.evernote.com` 返回 **errorCode=8** → 说明 host 不对(token 不属于该服务)
+
+中国大陆用户大多数情况下 host 应为 `app.yinxiang.com`,即使 token 看起来是 s12 等"海外样式"的 shard。
+
+### Python 3.14 兼容性
+
+`evernote2` 库依赖已被 Python 3.12+ 移除的 `inspect.getargspec`,在 Python 3.14 上 `client.get_note_store()` 会直接报 `AttributeError: module 'inspect' has no attribute 'getargspec'`。两种办法:
+
+**办法 A(推荐):** 用 Python 3.12 跑(homebrew 上 `python3.12` 通常已装):
+
+```bash
+/opt/homebrew/bin/python3.12 your_script.py
+```
+
+**办法 B:** 在脚本最前面打猴子补丁(import evernote2 之前):
+
+```python
+import inspect
+if not hasattr(inspect, 'getargspec'):
+    from collections import namedtuple
+    ArgSpec = namedtuple('ArgSpec', 'args varargs keywords defaults')
+    def _getargspec(func):
+        spec = inspect.getfullargspec(func)
+        return ArgSpec(spec.args, spec.varargs, spec.varkw, spec.defaults)
+    inspect.getargspec = _getargspec
+
+from evernote2.api.client import EvernoteClient  # 必须在补丁之后
+```
+
+> 注意 Python 3.14 系统自带的 SSL 证书有时还会触发 `CERTIFICATE_VERIFY_FAILED`。一并切到 python3.12 通常最省事。
+
 ```python
 from evernote2.edam.error.ttypes import EDAMUserException, EDAMSystemException
 
