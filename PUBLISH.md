@@ -1,12 +1,38 @@
 # 发布说明
 
+## v2.0.0 - 2026-06-08
+
+### 新增
+
+- **网页剪藏（Web Clipper）工作流**：通过印象笔记官方 RESTful API (`clipper-gateway/clipAndSaveNote`) 把任意 URL 的页面正文剪藏成笔记
+- 新增引擎 B（curl）与原 Python EDAM 引擎并存，剪藏走 curl，零依赖
+- 新增 `references/api-restful.md` 描述 RESTful 通道与状态码
+- 新增 `test_clipper.sh` 集成测试脚本
+- frontmatter `description` 增加剪藏触发词
+
+### 不变（向后兼容）
+
+- v1.x 全部 6 个工作流（搜索/列出笔记本/浏览/读取/创建/追加）保留 Python EDAM 实现
+- 老用户的 `EVERNOTE_TOKEN` 配置完全无需修改
+- 不使用剪藏功能的用户无需配置 `YX_AUTH_TOKEN`
+
+### 注意事项
+
+- 剪藏需要**单独的 Skills OAuth Token**（`YX_AUTH_TOKEN`），来源：https://app.yinxiang.com/third/skills-oauth/
+- 旧 `EVERNOTE_TOKEN`（`A=en-devtoken`）不能用于新 RESTful API（实测返回 `8403 Invalid authToken`）
+- 新 Token 有效期约 1 年（实测 token 含 `E=` 字段为 2027-06 过期）
+
+---
+
+## v1.1.0 - 2026-05-18
+
 ## Skill 信息
 
 | 项目 | 内容 |
 |------|------|
 | **Skill 名称** | evernote-note |
-| **版本** | 1.1.0 |
-| **描述** | 印象笔记 API skill，用于管理用户的印象笔记 |
+| **版本** | 2.0.0 |
+| **描述** | 印象笔记 API skill — 搜索/浏览/读取/创建/追加笔记 + 网页剪藏 |
 | **主页** | https://www.yinxiang.com |
 | **开发者** | WorkBuddy Team |
 
@@ -18,6 +44,7 @@
 - ✅ 新建笔记
 - ✅ 追加内容到笔记
 - ✅ 支持国内版和国际版印象笔记
+- ✅ **网页剪藏（v2.0 新增）**
 
 ## 依赖项
 

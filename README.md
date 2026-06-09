@@ -8,6 +8,15 @@
 - 📖 读取笔记内容
 - ➕ 新建笔记
 - 📌 追加内容到笔记
+- 🌐 **网页剪藏**（v2.0 新增 — 把任意 URL 的页面正文存入笔记）
+
+## v2.0 更新（2026-06-08）
+
+新增**网页剪藏**工作流。基于印象笔记 2026-05 发布的官方 OpenClaw Skill 包（`yinxiang-skill v1.0.2`）的 RESTful API（`clipper-gateway`），通过 curl 调用，**零额外依赖**。
+
+剪藏功能需要单独的 Skills OAuth Token（`YX_AUTH_TOKEN`），与原有 `EVERNOTE_TOKEN` 不通用。其他工作流仍走 EDAM Python SDK，与 v1.x **完全兼容**——不用剪藏的用户无需任何变化。
+
+详见 [SKILL.md "网页剪藏" 工作流](SKILL.md) 和 [references/api-restful.md](references/api-restful.md)。
 
 ## 安装前准备
 

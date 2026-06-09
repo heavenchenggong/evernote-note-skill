@@ -2,8 +2,10 @@
 name: evernote-note
 description: |
   印象笔记 API skill，用于管理用户的印象笔记。支持搜索笔记、浏览笔记本、获取笔记内容、新建笔记和追加内容。
+  v2.0 新增：通过印象笔记官方 RESTful API 调用网页剪藏（Web Clipper），将任意 URL 的页面正文抓取并存入笔记。
   当用户提到印象笔记、Evernote、笔记、备忘录、记事、知识库，或者想要查找、阅读、创建、编辑笔记内容时，使用此 skill。
   即使用户没有明确说"笔记"，只要意图涉及个人文档的存取（如"帮我记一下"、"我之前写过一个关于XX的东西"、"把这段内容保存下来"），也应触发此 skill。
+  当用户发送一个 URL 并说"剪藏"、"收藏到笔记"、"保存到印象笔记"时，使用本 skill 的剪藏工作流。
 homepage: https://www.yinxiang.com
 metadata:
   {
@@ -18,9 +20,22 @@ metadata:
 
 # evernote-note
 
-通过印象笔记 API 管理用户个人笔记，支持读取（搜索、列表、获取内容）和写入（新建、追加）。
+通过印象笔记 API 管理用户个人笔记，支持读取（搜索、列表、获取内容）和写入（新建、追加、剪藏）。
 
-完整的数据结构和接口参数详见 `references/api.md`。
+完整的数据结构和接口参数详见 `references/api.md`（EDAM 接口）和 `references/api-restful.md`（RESTful 接口，v2.0 新增）。
+
+## 引擎与 Token（v2.0 新增）
+
+本 skill 默认使用 **EDAM Python SDK**（Engine A），覆盖 95% 场景。
+仅一个工作流（**网页剪藏**）走印象笔记 2026 年新发布的 **RESTful API**（Engine B），需要单独的 Token。
+
+| 引擎 | Token 环境变量 | 走哪个工作流 | Token 来源 |
+|---|---|---|---|
+| **A（默认）** Python EDAM | `EVERNOTE_TOKEN` | 搜索 / 列出 / 读取 / 创建 / 追加 / 标签 | https://app.yinxiang.com/api/DeveloperToken.action |
+| **B** RESTful curl | `YX_AUTH_TOKEN` | **仅网页剪藏** | https://app.yinxiang.com/third/skills-oauth/ |
+
+> **不需要剪藏功能的用户**：只配 `EVERNOTE_TOKEN` 即可，与 v1.x 完全兼容。
+> **需要剪藏的用户**：另去 OAuth Skills 页面拿一个 `YX_AUTH_TOKEN`（格式同样以 `S=s` 开头但发放主体不同，两套 token 不通用，已在 2026-06-08 实测验证）。
 
 ## Setup
 
@@ -145,14 +160,15 @@ def text_to_enml(text):
 
 ## 接口决策表
 
-| 用户意图 | 调用 API | 关键参数 |
-|---------|---------|---------|
-| 搜索/查找笔记 | `findNotesMetadata()` | `NoteFilter.words` |
-| 查看笔记本列表 | `listNotebooks()` | - |
-| 浏览某笔记本里的笔记 | `findNotesMetadata()` | `NoteFilter.notebookGuid` |
-| 读取笔记正文 | `getNoteContent()` | `note_guid` |
-| 新建一篇笔记 | `createNote()` | `Note.title` + `Note.content`（ENML） |
-| 往已有笔记追加内容 | `updateNote()` | 先 `getNote()` 获取，再 `updateNote()` 保存 |
+| 用户意图 | 引擎 | 调用 API | 关键参数 |
+|---------|------|---------|---------|
+| 搜索/查找笔记 | A (Python) | `findNotesMetadata()` | `NoteFilter.words` |
+| 查看笔记本列表 | A (Python) | `listNotebooks()` | - |
+| 浏览某笔记本里的笔记 | A (Python) | `findNotesMetadata()` | `NoteFilter.notebookGuid` |
+| 读取笔记正文 | A (Python) | `getNoteContent()` | `note_guid` |
+| 新建一篇笔记 | A (Python) | `createNote()` | `Note.title` + `Note.content`（ENML） |
+| 往已有笔记追加内容 | A (Python) | `updateNote()` | 先 `getNote()` 获取，再 `updateNote()` 保存 |
+| **从 URL 剪藏网页**（v2.0 新增）| **B (curl)** | `clipper-gateway/clipAndSaveNote` | `url`，可选 `notebookGuid` |
 
 ## 常用工作流
 
@@ -224,6 +240,56 @@ filter.words = 'SuccessFactors'
 result = note_store.findNotesMetadata(developer_token, filter, 0, 20,
                                      NoteStoreTypes.NotesMetadataResultSpec(includeTitle=True))
 ```
+
+### 网页剪藏（v2.0 新增，走 Engine B）
+
+**触发词：** 用户消息含 URL + "剪藏" / "保存到笔记" / "收藏到印象笔记"
+
+**前置检查：** 先确认 `YX_AUTH_TOKEN` 已配置（**与 EVERNOTE_TOKEN 不通用**）。如果未配置，提示用户：
+
+> 网页剪藏需要单独的 Skills OAuth Token。请访问：
+> https://app.yinxiang.com/third/skills-oauth/
+> 生成 Token 后保存为 `YX_AUTH_TOKEN` 环境变量。
+
+**实现：** 用 Bash 工具直接 curl 印象笔记 RESTful API（不需要 Python，零依赖）：
+
+```bash
+# 检查 token
+if [ -z "$YX_AUTH_TOKEN" ]; then
+  echo "缺少 YX_AUTH_TOKEN，剪藏不可用。请按上述提示配置。"
+  exit 1
+fi
+
+# 剪藏（同步等待返回，确认成功）
+curl -s -X POST \
+  "https://app.yinxiang.com/third/clipper-gateway/restful/v1/clipAndSaveNote" \
+  -H "Content-Type: text/plain" \
+  -H "auth: $YX_AUTH_TOKEN" \
+  -H "clipper-c-auth: $YX_AUTH_TOKEN" \
+  -d "{\"url\":\"$URL\"}"
+```
+
+**指定笔记本时**，body 中追加 `"notebookGuid":"GUID"`：
+
+```bash
+-d "{\"url\":\"$URL\",\"notebookGuid\":\"$NOTEBOOK_GUID\"}"
+```
+
+**结果判断：**
+
+- `status.code == 8200` 且 `data.noteGuid` 非空 → 剪藏成功，告诉用户笔记 GUID
+- 其它 → 取 `status.msg` 反馈失败
+
+**响应示例（成功）：**
+
+```json
+{
+  "status": { "code": 8200, "msg": "" },
+  "data": { "noteGuid": "b71d4021-d4a9-4337-98ea-51cf04afc004" }
+}
+```
+
+**为什么这条走 curl 不走 Python：** 印象笔记的 EDAM SDK（`evernote2`）不提供 Web Clipper 接口。剪藏必须走 2026-05 新发布的 RESTful 通道（`clipper-gateway`），且该通道**只接受新 OAuth Skills Token**（`YX_AUTH_TOKEN`），不接受旧 Developer Token（实测 `EVERNOTE_TOKEN` 在此接口返回 `8403 Invalid authToken`）。
 
 ## 搜索语法
 
